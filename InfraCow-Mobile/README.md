@@ -131,19 +131,20 @@ docker compose up --build        # equivale a `npx expo start`, sem instalar nad
   `API_URL=http://SEU_IP:3000 docker compose up`  (ou `API_URL=...` no `.env`, como descrito acima).
 - Celular físico (dev client/APK): informe o IP da sua máquina, `HOST_LAN_IP=192.168.x.x docker compose up`.
 
-Para subir **API + banco + mobile** de uma vez, use o `docker-compose.yml` da raiz do workspace.
+Para subir **API + banco + mobile** de uma vez, use o `docker-compose.yml` da raiz do repositório.
 
 > A URL da API é resolvida em `app.config.js`: se `API_URL` estiver definida ela vale; senão vale `extra.API_URL` do `app.json` (comportamento original).
 
-### Pipelines
+### Pipelines (workflows na raiz do repositório)
 
 | Workflow | Quando | O que faz |
 |----------|--------|-----------|
-| `CI/CD - Mobile` (`ci.yml`) | PR e main | `npm ci`, valida `app.config.js`, `tsc` e `expo-doctor` (informativos), **bundle Android** (bloqueante), build da imagem Docker + Metro no container |
-| ↳ `eas-update` | main / manual | publica **atualização OTA** no canal `production` (ou `preview`) com `eas update` |
-| `EAS Build` (`eas-build.yml`) | manual ou tag `v*` | gera APK/AAB nativo no EAS (perfil `preview`/`production`/`development`) |
+| `CI/CD - Mobile` (`mobile-ci.yml`) | PR e main (mudanças em `InfraCow-Mobile/`) | `npm ci`, valida `app.config.js`, `tsc` e `expo-doctor` (informativos), **bundle Android** (bloqueante), build da imagem Docker + Metro no container |
+| ↳ job `eas-update` | main / manual | publica **atualização OTA** no canal `production` (ou `preview`) com `eas update` |
+| `Mobile - EAS Build` (`mobile-eas-build.yml`) | manual ou tag `mobile-v*` | gera APK/AAB nativo no EAS (perfil `preview`/`production`/`development`) |
 
 **Secret** obrigatório para publicar: `EXPO_TOKEN` (expo.dev → Account → Access Tokens).
 **Variable** opcional: `API_URL` (URL da API embutida no bundle; sem ela vale o `app.json`).
 
-> OTA só entrega mudanças de JS/TS a builds com o mesmo `runtimeVersion` (hoje `1.0.0`). Ao adicionar/atualizar uma lib **nativa**, gere um novo build (`EAS Build`) e incremente o `runtimeVersion`.
+> OTA só entrega mudanças de JS/TS a builds com o mesmo `runtimeVersion` (hoje `1.0.0`). O modo offline usa `expo-sqlite` e `netinfo` (nativos): confirme que o APK instalado já os contém ou gere um novo build (`Mobile - EAS Build`) e incremente o `runtimeVersion` antes de publicar OTA.
+> Na **web** o `expo-sqlite` exige wasm + COOP/COEP; o fluxo validado é celular/dev client.

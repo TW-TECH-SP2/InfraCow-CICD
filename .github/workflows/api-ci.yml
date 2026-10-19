@@ -1,0 +1,221 @@
+name: CI/CD - API
+
+# Monorepo: este workflow só roda quando algo da API muda (InfraCow-API/**).
+# PR            -> testes + teste em Docker (nada é publicado)
+# push em main  -> testes + Docker + publica imagem no Docker Hub + deploy no Render
+# manual        -> mesmo fluxo da main, a partir da branch escolhida
+
+on:
+  pull_request:
+    paths:
+      - 'InfraCow-API/**'
+      - '.github/workflows/api-ci.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'InfraCow-API/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Um deploy por vez; execuções antigas de PR são canceladas, as da main não.
+concurrency:
+  group: api-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: infracow-api
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1) Roda a API "crua" (npm start) contra um Postgres real e executa o smoke test
+  # ---------------------------------------------------------------------------
+  test:
+    name: Testes (API + Postgres)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: InfraCow-API
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: usuario_banco
+          POSTGRES_PASSWORD: senha_usuario_banco
+          POSTGRES_DB: nome_banco
+        # Sem este mapeamento o Postgres fica inalcançável em localhost
+        # e a API nunca conecta ao banco.
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U usuario_banco -d nome_banco"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: InfraCow-API/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Checagem de sintaxe (node --check)
+        run: find index.js swagger.js src -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Iniciar API
+        env:
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_USER: usuario_banco
+          DB_PASSWORD: senha_usuario_banco
+          DB_NAME: nome_banco
+          DB_SSL: false
+          JWT_SECRET: ci-only-secret
+          PORT: 3000
+        run: nohup npm start > api.log 2>&1 &
+
+      - name: Smoke test (health, cadastro, login, rota protegida, Swagger)
+        env:
+          API_URL: http://localhost:3000
+        run: sh scripts/smoke-test.sh
+
+      - name: Log da API (em caso de falha)
+        if: failure()
+        run: cat api.log || true
+
+  # ---------------------------------------------------------------------------
+  # 2) Garante que a imagem Docker builda e que API + banco funcionam via Compose
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Teste da imagem Docker
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: InfraCow-API
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem (com cache)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./InfraCow-API
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Subir API + Postgres (docker compose)
+        run: docker compose up -d --wait --wait-timeout 120
+
+      - name: Smoke test contra os containers
+        env:
+          API_URL: http://localhost:3000
+        run: sh scripts/smoke-test.sh
+
+      - name: Logs dos containers (em caso de falha)
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Derrubar ambiente
+        if: always()
+        run: docker compose down -v
+
+  # ---------------------------------------------------------------------------
+  # 3) Publica a imagem no Docker Hub (somente main / execução manual)
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publicar imagem (Docker Hub)
+    runs-on: ubuntu-latest
+    needs: [test, docker]
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 15
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login no Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Tags da imagem
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short,prefix=sha-
+
+      - name: Build e push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./InfraCow-API
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # 4) Deploy no Render + verificação de saúde
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy (Render)
+    runs-on: ubuntu-latest
+    needs: publish
+    if: github.event_name != 'pull_request'
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.RENDER_SERVICE_URL || 'https://infracow-api-hv24.onrender.com' }}
+    steps:
+      - name: Disparar deploy no Render
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::error::Secret RENDER_DEPLOY_HOOK não configurado (Render > Settings > Deploy Hook)."
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --retry 3 --retry-delay 5 -X POST "$RENDER_DEPLOY_HOOK"
+          echo
+          echo "Deploy disparado."
+
+      - name: Aguardar serviço saudável (/health)
+        env:
+          SERVICE_URL: ${{ vars.RENDER_SERVICE_URL || 'https://infracow-api-hv24.onrender.com' }}
+        run: |
+          # Free tier do Render pode levar minutos para build + cold start.
+          # Aguarda um instante para o Render iniciar o novo deploy antes de checar.
+          sleep 30
+          for i in $(seq 1 40); do
+            if curl -fsS -m 20 "$SERVICE_URL/health" | grep -q '"status":"ok"'; then
+              echo "API saudável em $SERVICE_URL"
+              exit 0
+            fi
+            echo "Tentativa $i/40: ainda não respondeu, aguardando 15s..."
+            sleep 15
+          done
+          echo "::error::A API não respondeu /health em ~10 min após o deploy."
+          exit 1
