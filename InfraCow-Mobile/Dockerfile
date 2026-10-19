@@ -6,7 +6,7 @@
 #
 # Para subir junto com a API e o banco, use o docker-compose.yml da raiz do workspace.
 
-FROM node:22-bookworm-slim AS base
+FROM node:26-bookworm-slim AS base
 ENV NPM_CONFIG_UPDATE_NOTIFIER=false \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false \
