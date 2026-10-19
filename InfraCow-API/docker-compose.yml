@@ -1,0 +1,55 @@
+# API + PostgreSQL local, prontos para uso com `docker compose up --build`.
+# Funciona sem .env (valores padrão abaixo); se existir um .env, o Compose o lê
+# automaticamente para sobrescrever os padrões (DB_USER, DB_PASSWORD, ...).
+#
+# Para subir API + banco + app mobile juntos, use o docker-compose.yml da raiz
+# do workspace (pasta acima).
+
+services:
+  api:
+    build: .
+    image: infracow-api:local
+    container_name: infracow
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      # Dentro do container a API sempre escuta em 3000 e fala com o serviço "db".
+      # (O PORT do .env define só a porta publicada no host, acima.)
+      PORT: "3000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-infracow}
+      DB_PASSWORD: ${DB_PASSWORD:-infracow_dev_password}
+      DB_NAME: ${DB_NAME:-infracow}
+      DB_SSL: "false"
+      # Vazio de propósito: o compose local usa SEMPRE o Postgres local, nunca
+      # um banco remoto (Supabase/Render) que esteja no seu .env.
+      DATABASE_URL: ""
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    container_name: infracow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-infracow}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-infracow_dev_password}
+      POSTGRES_DB: ${DB_NAME:-infracow}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:
+  uploads:

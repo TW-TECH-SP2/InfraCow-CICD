@@ -1,0 +1,16 @@
+.git
+.github
+.gitignore
+.gitattributes
+.env
+.env.*
+node_modules
+.expo
+dist
+web-build
+android
+ios
+npm-debug.log*
+Dockerfile
+.dockerignore
+docker-compose*.yml

@@ -1,0 +1,17 @@
+.git
+.github
+.gitignore
+.gitattributes
+.env
+.env.*
+node_modules
+npm-debug.log*
+*.log
+*.md
+img.png
+uploads
+Dockerfile
+.dockerignore
+docker-compose*.yml
+render.yaml
+scripts

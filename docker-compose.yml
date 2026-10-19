@@ -1,0 +1,106 @@
+# InfraCow — ambiente completo com UM comando:
+#
+#   docker compose up --build        (ou: make up)
+#
+#   db      PostgreSQL 16                      (volume pgdata)
+#   api     InfraCow-API  -> http://localhost:3000   (Swagger em /api-docs)
+#   mobile  Expo/Metro    -> http://localhost:8081   (web + dev client)
+#   smoke   teste de integração entre os serviços (profile "test")
+#
+# Ordem garantida por healthcheck:  db saudável -> api saudável -> mobile.
+# Os serviços conversam pela rede interna do compose usando o NOME do serviço
+# (api -> db:5432, mobile -> api:3000, smoke -> api:3000 e mobile:8081).
+
+name: infracow
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-infracow}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-infracow_dev_password}
+      POSTGRES_DB: ${DB_NAME:-infracow}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: ${API_PATH:-./InfraCow-API}
+    image: infracow-api:local
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-infracow}
+      DB_PASSWORD: ${DB_PASSWORD:-infracow_dev_password}
+      DB_NAME: ${DB_NAME:-infracow}
+      DB_SSL: "false"
+      # Nunca usar banco remoto (Supabase/Render) neste ambiente local.
+      DATABASE_URL: ""
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    volumes:
+      - uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    # O HEALTHCHECK vem da imagem (GET /health == {"status":"ok"}).
+
+  mobile:
+    build:
+      context: ${MOBILE_PATH:-./InfraCow-Mobile}
+      target: dev
+    image: infracow-mobile:dev
+    restart: unless-stopped
+    ports:
+      - "${EXPO_PORT:-8081}:8081"
+    environment:
+      # O app roda no NAVEGADOR/CELULAR (fora do Docker), então a URL precisa ser
+      # alcançável de fora: localhost para web, IP da máquina para celular (make lan).
+      API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
+      REACT_NATIVE_PACKAGER_HOSTNAME: ${HOST_LAN_IP:-}
+      # Entre containers: só sobe o Expo depois que a API respondeu (rede interna).
+      WAIT_FOR_API: http://api:3000/health
+      EXPO_NO_TELEMETRY: "1"
+    volumes:
+      - ${MOBILE_PATH:-./InfraCow-Mobile}:/app
+      - /app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8081/status').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  # Teste de integração DENTRO da rede do compose:
+  #   docker compose --profile test run --rm smoke     (ou: make smoke)
+  smoke:
+    profiles: ["test"]
+    image: curlimages/curl:8.10.1
+    entrypoint: ["sh", "/smoke-test.sh"]
+    environment:
+      API_URL: http://api:3000
+      MOBILE_URL: http://mobile:8081
+    volumes:
+      - ${API_PATH:-./InfraCow-API}/scripts/smoke-test.sh:/smoke-test.sh:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      mobile:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:

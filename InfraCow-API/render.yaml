@@ -1,0 +1,36 @@
+# Blueprint do Render (infraestrutura como código) — OPCIONAL.
+# Só tem efeito se você criar um "Blueprint" no painel do Render apontando para
+# este repositório; ele NÃO altera o serviço que você já tem rodando.
+#
+# O deploy continua sendo disparado pelo GitHub Actions (job "deploy" do ci.yml)
+# via Deploy Hook, depois que testes e build passam — por isso o auto-deploy do
+# Render fica desligado (evita deploy duplicado/antes do CI).
+services:
+  - type: web
+    name: infracow-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    autoDeployTrigger: "off"
+    healthCheckPath: /health
+    envVars:
+      # Segredos: o Render pede os valores na criação do Blueprint (nunca no git).
+      - key: JWT_SECRET
+        sync: false
+      # Use UMA das opções de banco: DATABASE_URL (ex.: Supabase) OU as DB_* abaixo.
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      # PORT é injetada pelo Render; a API já lê process.env.PORT.
