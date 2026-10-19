@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /InfraCow-API
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+  # Pacotes do Expo/React Native têm versões amarradas ao SDK (use `npx expo install`);
+  # por isso o app só recebe atualizações patch agrupadas.
+  - package-ecosystem: npm
+    directory: /InfraCow-Mobile
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 3
+    groups:
+      patch-updates:
+        update-types: [patch]
+  - package-ecosystem: docker
+    directory: /InfraCow-API
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /InfraCow-Mobile
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

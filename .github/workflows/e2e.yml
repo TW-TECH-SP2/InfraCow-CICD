@@ -1,16 +1,21 @@
 name: E2E - API + Banco + Mobile
 
-# Teste de integração do sistema inteiro: sobe db + api + expo com o docker-compose da
-# raiz e valida a comunicação entre eles.
-#
-# Este workflow vale para o repositório "raiz/workspace" (o que contém este docker-compose.yml).
-# Ele clona os dois repositórios do app como pastas irmãs. Se eles forem privados, crie o secret
-# REPOS_TOKEN (PAT com acesso de leitura a ambos); caso contrário o token padrão é usado.
+# Teste de integração do sistema inteiro, direto deste repositório (monorepo):
+# sobe db + api + expo com o docker-compose.yml da raiz e valida a comunicação entre eles.
 
 on:
+  pull_request:
+    paths:
+      - 'InfraCow-API/**'
+      - 'InfraCow-Mobile/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/e2e.yml'
   push:
     branches: [ main ]
-  pull_request:
+    paths:
+      - 'InfraCow-API/**'
+      - 'InfraCow-Mobile/**'
+      - 'docker-compose.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'   # segunda 06:00 UTC: pega regressões por mudança de dependência/imagem
@@ -28,22 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout (workspace)
+      - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Checkout InfraCow-API
-        uses: actions/checkout@v4
-        with:
-          repository: TW-TECH-SP2/InfraCow-API
-          path: InfraCow-API
-          token: ${{ secrets.REPOS_TOKEN || github.token }}
-
-      - name: Checkout InfraCow-Mobile
-        uses: actions/checkout@v4
-        with:
-          repository: TW-TECH-SP2/InfraCow-Mobile
-          path: InfraCow-Mobile
-          token: ${{ secrets.REPOS_TOKEN || github.token }}
 
       - name: Validar o compose
         run: docker compose config --quiet
@@ -51,7 +42,7 @@ jobs:
       - name: Subir banco e API
         run: docker compose up -d --build --wait --wait-timeout 180 db api
 
-      # Bloqueante: cadastro -> login -> rota protegida, tudo pela rede interna do Docker
+      # Bloqueante: cadastro -> login -> contrato do sync offline, pela rede interna do Docker
       - name: Smoke test API <-> Postgres (rede interna)
         run: docker compose --profile test run --rm --no-deps -e MOBILE_URL= smoke
 
@@ -62,7 +53,7 @@ jobs:
           docker compose up -d --wait --wait-timeout 240 mobile
           docker compose --profile test run --rm smoke
 
-      - name: Logs (em caso de falha)
+      - name: Logs dos containers
         if: always()
         run: docker compose logs --no-color --tail=150
 

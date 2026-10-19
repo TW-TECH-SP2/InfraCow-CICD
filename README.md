@@ -1,21 +1,28 @@
 # InfraCow — DevOps / CI-CD
 
-Workspace que junta os dois repositórios (**InfraCow-API** e **InfraCow-Mobile**) e automatiza
-o ciclo completo: subir tudo local com Docker, testar, publicar a API no Render e o app no Expo.
+Monorepo com **InfraCow-API** e **InfraCow-Mobile** e todo o ciclo automatizado:
+subir tudo local com Docker, testar, publicar a API no Render e o app no Expo.
+> Os workflows ficam na **raiz** (`.github/workflows/`) — é o único lugar que o GitHub executa.
 
 ```
-InfraCow/                      <- este repositório (orquestração)
-├── docker-compose.yml         db + api + mobile (+ smoke)
-├── Makefile · scripts/        atalhos
-├── .github/workflows/e2e.yml  teste de integração do sistema inteiro
-├── InfraCow-API/              repo da API    (clone ao lado)
-└── InfraCow-Mobile/           repo do app    (clone ao lado)
+InfraCow/
+├── docker-compose.yml           db + api + mobile (+ smoke)
+├── Makefile · scripts/          atalhos
+├── render.yaml                  Blueprint do Render (opcional)
+├── .github/
+│   ├── workflows/api-ci.yml            API: testes -> Docker -> Docker Hub -> Render
+│   ├── workflows/mobile-ci.yml         App: qualidade -> Docker -> OTA (EAS Update)
+│   ├── workflows/mobile-eas-build.yml  App: build APK/AAB (manual ou tag mobile-v*)
+│   ├── workflows/e2e.yml               sistema inteiro no compose
+│   └── dependabot.yml
+├── InfraCow-API/
+└── InfraCow-Mobile/
 ```
 
 ## 1. Subir tudo (um comando)
 
-Pré-requisito: Docker com Compose v2. Clone os dois repositórios como pastas irmãs deste arquivo
-(ou aponte `API_PATH` / `MOBILE_PATH` no `.env`).
+Pré-requisito: Docker com Compose v2. (`API_PATH` / `MOBILE_PATH` no `.env` só são necessários
+se você mover as pastas.)
 
 ```bash
 make up            # = docker compose up --build   (logs na tela)
@@ -49,33 +56,42 @@ Ponto-chave: o app roda no **navegador/celular**, não dentro do container. Por 
 
 ## 3. CI/CD
 
-| Onde | Workflow | Gatilho | Resultado |
-|------|----------|---------|-----------|
-| API | `CI/CD - API` | PR / main | testes com Postgres real → teste da imagem Docker → **publica no Docker Hub** → **deploy no Render** → espera `/health` |
-| Mobile | `CI/CD - Mobile` | PR / main | bundle Android → imagem Docker/Metro → **publica OTA no Expo** (EAS Update, canal `production`) |
-| Mobile | `EAS Build` | manual / tag `v*` | **build APK/AAB** no EAS |
-| Workspace | `E2E` | push / PR / segunda 06:00 UTC | db + api + expo no compose e smoke test |
+| Workflow | Gatilho (só se a pasta mudou) | Resultado |
+|----------|-------------------------------|-----------|
+| `CI/CD - API` (`api-ci.yml`) | PR / push main em `InfraCow-API/**` | testes com Postgres real (inclui **contrato do sync offline**) → teste da imagem Docker → **publica no Docker Hub** → **deploy no Render** → espera `/health` |
+| `CI/CD - Mobile` (`mobile-ci.yml`) | PR / push main em `InfraCow-Mobile/**` | bundle Android → imagem Docker/Metro → **publica OTA no Expo** (EAS Update, canal `production`) |
+| `Mobile - EAS Build` (`mobile-eas-build.yml`) | manual ou tag `mobile-v*` | **build APK/AAB** no EAS |
+| `E2E` (`e2e.yml`) | PR / push / segunda 06:00 UTC | db + api + expo no compose e smoke test |
 
 ### Configuração única (checklist)
 
-**Repositório da API** — Settings → Secrets and variables → Actions
+Tudo em Settings → Secrets and variables → Actions **deste repositório**:
+
+**API**
 - Secrets: `DOCKER_USERNAME`, `DOCKER_PASSWORD`, `RENDER_DEPLOY_HOOK` (Render → Settings → Deploy Hook)
 - Variable (opcional): `RENDER_SERVICE_URL`
 
-**Repositório do Mobile**
+**Mobile**
 - Secret: `EXPO_TOKEN` (expo.dev → Account Settings → Access Tokens)
 - Variable (opcional): `API_URL` — sem ela vale o `app.json` (API do Render)
 
-**Repositório do workspace** — nada obrigatório. Se API/Mobile forem privados: secret `REPOS_TOKEN`
-(PAT com leitura nos dois). Os nomes `TW-TECH-SP2/InfraCow-API|Mobile` em `e2e.yml` vêm dos `package.json`/README.
+Recomendado: em Settings → Branches, exigir os checks `test` / `docker` (API) e `quality` (Mobile) antes do merge. Como os workflows usam filtro de caminho, marque-os como obrigatórios só se aceitar que PRs sem mudança na pasta fiquem sem esse check.
 
-Recomendado: em Settings → Branches, exigir os checks `test` / `docker` (API) e `quality` (Mobile) antes do merge.
+## 4. O que o DevOps NÃO altera
 
-## 4. O que NÃO mudou
+Nenhum arquivo de `src/` (API ou app), `index.js`, `swagger.js`, `package*.json`, `app.json`, `eas.json`
+ou de banco/modelos. Só Docker, Compose, GitHub Actions, Render, documentação e `app.config.js`
+(veja [MUDANCAS.md](MUDANCAS.md)).
 
-Nenhum arquivo de `src/`, `index.js`, `swagger.js`, `App.tsx`, `package.json`, `package-lock.json`,
-`app.json`, `eas.json` ou de banco/modelos foi alterado. Só foram criados/alterados arquivos de
-Docker, Compose, GitHub Actions, Render, documentação e `app.config.js` (veja [MUDANCAS.md](MUDANCAS.md)).
+### App com modo offline (SQLite + fila)
+
+O app grava tudo primeiro no SQLite do celular e sincroniza quando a internet volta. Consequências no DevOps:
+- O smoke test da API (etapa 7) reproduz as **mesmas requisições da fila offline** (multipart de fazenda/animal,
+  JSON de medição, PUT/DELETE) e exige o id do servidor na resposta; se a API quebrar esse contrato o CI reprova
+  — no app isso viraria dado perdido em silêncio (a fila descarta a operação após 5 falhas).
+- **OTA:** o JS novo usa `expo-sqlite` e `@react-native-community/netinfo`. O OTA só é seguro para builds que já
+  tenham esses módulos nativos (o `runtimeVersion` é fixo em `1.0.0`). Confirme com `eas build:list` ou gere um build novo
+  (`Mobile - EAS Build`) e incremente o `runtimeVersion` **antes** de configurar o `EXPO_TOKEN`.
 
 ## 5. Limitações conhecidas
 
@@ -84,6 +100,9 @@ Docker, Compose, GitHub Actions, Render, documentação e `app.config.js` (veja 
   de front-end (fora do escopo); a correção é usar `Constants.expoConfig.extra.API_URL`, como as outras telas.
 - **Expo Go não funciona** com este projeto (módulos nativos). No celular use o dev client / APK
   (`EAS Build`, perfil `development`/`preview`). No navegador use a versão web do Metro.
+- **Web (Metro no Docker) com SQLite:** `src/storage/db.ts` abre o banco no import; `expo-sqlite` na web exige
+  wasm + cabeçalhos COOP/COEP, que o `metro.config.js` não configura. A versão web pode não abrir; o caminho
+  testado em campo é celular (dev client/APK). Não consegui validar isso aqui.
 - `tsc` e `expo-doctor` rodam no CI como **informativos** e o Metro-no-Docker como **não bloqueante**
   até o primeiro run verde (marcados com `continue-on-error` + comentário).
 - O Render grátis pode levar minutos para acordar; o job de deploy espera até ~10 min.

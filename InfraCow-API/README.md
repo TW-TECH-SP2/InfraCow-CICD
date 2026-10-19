@@ -244,13 +244,13 @@ sh scripts/smoke-test.sh         # cadastro -> login -> rota protegida -> Swagge
 Funciona sem `.env` (há valores padrão). Se existir `.env`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `JWT_SECRET` e `PORT` (porta publicada no host) são aproveitados.
 Dentro do container a API sempre usa `DB_HOST=db` e porta interna 3000, e **nunca** usa `DATABASE_URL` (para não escrever em banco remoto por engano).
 
-Para subir **API + banco + app mobile juntos**, use o `docker-compose.yml` da raiz do workspace (veja o README de lá).
+Para subir **API + banco + app mobile juntos**, use o `docker-compose.yml` da raiz do repositório (veja o README de lá).
 
-### Pipeline (`.github/workflows/ci.yml`)
+### Pipeline (`.github/workflows/api-ci.yml`, na raiz do monorepo)
 
 | Etapa | Quando | O que faz |
 |-------|--------|-----------|
-| `test` | PR e main | `npm ci`, checagem de sintaxe, API real + Postgres, `scripts/smoke-test.sh` |
+| `test` | PR e main | `npm ci`, checagem de sintaxe, API real + Postgres, `scripts/smoke-test.sh` (inclui contrato do sync offline do app) |
 | `docker` | PR e main | build da imagem (cache) + `docker compose up` + smoke test nos containers |
 | `publish` | main / manual | publica `infracow-api:latest` e `:sha-<commit>` no Docker Hub |
 | `deploy` | main / manual | dispara o Deploy Hook do Render e aguarda `/health` responder |
@@ -258,4 +258,4 @@ Para subir **API + banco + app mobile juntos**, use o `docker-compose.yml` da ra
 **Secrets** (Settings → Secrets and variables → Actions): `DOCKER_USERNAME`, `DOCKER_PASSWORD`, `RENDER_DEPLOY_HOOK`.
 **Variable** opcional: `RENDER_SERVICE_URL` (padrão `https://infracow-api-hv24.onrender.com`).
 
-`render.yaml` é um Blueprint **opcional** do Render (infra como código); não afeta o serviço atual.
+`render.yaml` (na raiz do repositório) é um Blueprint **opcional** do Render; não afeta o serviço atual.
