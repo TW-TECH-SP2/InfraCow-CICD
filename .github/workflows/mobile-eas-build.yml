@@ -62,7 +62,7 @@ jobs:
           cache-dependency-path: InfraCow-Mobile/package-lock.json
 
       - name: Configurar Expo e EAS
-        uses: expo/expo-github-action@v8
+        uses: expo/expo-github-action@v9
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
