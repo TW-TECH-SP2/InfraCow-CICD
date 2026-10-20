@@ -4,7 +4,7 @@
   "scripts": {},
   "dependencies": {
     "@expo-google-fonts/be-vietnam-pro": "^0.4.1",
-    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-async-storage/async-storage": "3.1.1",
     "@react-native-community/datetimepicker": "8.6.0",
     "@react-native-community/netinfo": "11.5.2",
     "@react-native-picker/picker": "^2.11.4",
