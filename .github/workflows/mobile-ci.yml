@@ -21,6 +21,7 @@ on:
     paths:
       - 'InfraCow-Mobile/**'
       - '!InfraCow-Mobile/*.md'
+      - '.github/workflows/mobile-ci.yml'
   workflow_dispatch:
     inputs:
       channel:

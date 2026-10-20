@@ -70,6 +70,9 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Validar projeto Expo
+        run: npx expo config --type public > /dev/null
+
       - name: Disparar build (${{ env.PROFILE }})
         run: |
           if [ "$WAIT" = "true" ]; then

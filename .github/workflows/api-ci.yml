@@ -14,6 +14,7 @@ on:
     branches: [ main ]
     paths:
       - 'InfraCow-API/**'
+      - '.github/workflows/api-ci.yml'
   workflow_dispatch:
 
 permissions:
@@ -143,7 +144,7 @@ jobs:
     name: Publicar imagem (Docker Hub)
     runs-on: ubuntu-latest
     needs: [test, docker]
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     timeout-minutes: 15
     steps:
       - name: Checkout do código
@@ -184,12 +185,18 @@ jobs:
     name: Deploy (Render)
     runs-on: ubuntu-latest
     needs: publish
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     timeout-minutes: 20
     environment:
       name: production
       url: ${{ vars.RENDER_SERVICE_URL || 'https://infracow-api-hv24.onrender.com' }}
     steps:
+      - name: Verificar configuração do serviço
+        env:
+          SERVICE_URL: ${{ vars.RENDER_SERVICE_URL }}
+        run: |
+          if [ -z "$SERVICE_URL" ]; then echo "::error::Configure a variável RENDER_SERVICE_URL"; exit 1; fi
+
       - name: Disparar deploy no Render
         env:
           RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
