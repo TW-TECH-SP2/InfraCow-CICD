@@ -54,7 +54,7 @@ jobs:
         working-directory: InfraCow-Mobile
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Node.js
         uses: actions/setup-node@v4
@@ -105,7 +105,7 @@ jobs:
         working-directory: InfraCow-Mobile
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -168,7 +168,7 @@ jobs:
 
       - name: Checkout do código
         if: steps.token.outputs.skip != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar Node.js
         if: steps.token.outputs.skip != 'true'
