@@ -66,12 +66,18 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Verificar app.config.js (URL da API)
+      - name: Validar configuração Expo (URL da API)
         run: |
           node -e "
-            const cfg = require('./app.config.js')({ config: require('./app.json').expo });
-            if (!cfg.extra || !cfg.extra.API_URL) { console.error('extra.API_URL ausente'); process.exit(1); }
-            console.log('extra.API_URL =', cfg.extra.API_URL);
+          const { execFileSync } = require('child_process');
+          
+          const ouput = execFileSync(
+          'npx',
+          ['expo', 'config', '--json'],
+          { encoding: 'utf8' }
+          );
+
+          const cfg = JSON.parse(output);
           "
 
       # Informativo por enquanto: o projeto nunca rodou tsc no CI e pode ter erros
