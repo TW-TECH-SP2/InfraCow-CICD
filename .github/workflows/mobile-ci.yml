@@ -71,7 +71,7 @@ jobs:
           node -e "
           const { execFileSync } = require('child_process');
           
-          const ouput = execFileSync(
+          const output = execFileSync(
           'npx',
           ['expo', 'config', '--json'],
           { encoding: 'utf8' }
