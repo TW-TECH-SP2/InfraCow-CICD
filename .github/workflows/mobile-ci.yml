@@ -125,10 +125,10 @@ jobs:
       - name: Subir o servidor Expo no container
         continue-on-error: true
         run: |
-          docker run -d --name expo -p 8081:8081 -e API_URL=http://api.exemplo:3000 infracow-mobile:ci
+          docker run -d --name expo -p 8081:8081 -e API_URL="$API_URL" infracow-mobile:ci
           for i in $(seq 1 40); do
             code=$(curl -s -o /dev/null -m 5 -w '%{http_code}' http://localhost:8081/status || true)
-            if [ "$code" != "000" ] && [ -n "$code" ]; then
+            if [ "$code" != "200" ] && [ -n "$code" ]; then
               echo "Metro respondeu (HTTP $code)"; exit 0
             fi
             sleep 3
