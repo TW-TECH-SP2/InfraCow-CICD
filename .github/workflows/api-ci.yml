@@ -112,7 +112,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build da imagem (com cache)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./InfraCow-API
           load: true
@@ -168,7 +168,7 @@ jobs:
             type=sha,format=short,prefix=sha-
 
       - name: Build e push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ./InfraCow-API
           push: true
